@@ -1,0 +1,74 @@
+# Serverless Framework 腾讯云部署配置
+service: quantum-trading-frontend
+
+provider:
+  name: tencent
+  runtime: Nodejs16.13
+  region: ap-guangzhou
+  credentials: ~/.tencent/credentials
+
+functions:
+  app:
+    handler: index.handler
+    events:
+      - apigw:
+          path: /
+          method: ANY
+      - apigw:
+          path: /{proxy+}
+          method: ANY
+
+plugins:
+  - serverless-tencent-scf
+  - serverless-nextjs-plugin
+
+custom:
+  nextjs:
+    nextConfigDir: ./
+    assetPrefix: https://${self:custom.domain}
+  domain: ${env:DOMAIN, 'your-domain.com'}
+
+package:
+  exclude:
+    - .git/**
+    - .next/**
+    - node_modules/**
+    - out/**
+    - '*.md'
+    - '*.bat'
+  include:
+    - package.json
+    - next.config.js
+    - public/**
+    - src/**
+
+resources:
+  Resources:
+    # COS 存储桶配置
+    WebsiteBucket:
+      Type: TencentCloud::COS::Bucket
+      Properties:
+        BucketName: quantum-trading-${self:provider.stage}
+        Region: ${self:provider.region}
+        ACL: public-read
+        WebsiteConfiguration:
+          IndexDocument: index.html
+          ErrorDocument: 404.html
+    
+    # CDN 配置（可选）
+    CDNDomain:
+      Type: TencentCloud::CDN::Domain
+      Properties:
+        Domain: ${self:custom.domain}
+        ServiceType: web
+        Origin:
+          Origins:
+            - ${self:resources.Resources.WebsiteBucket.Properties.BucketName}.cos.${self:provider.region}.myqcloud.com
+          OriginType: cos
+        Cache:
+          SimpleCache:
+            CacheRules:
+              - CacheType: all
+                CacheContents:
+                  - "*"
+                CacheTime: 86400
